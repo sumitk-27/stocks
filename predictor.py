@@ -1,62 +1,60 @@
 import json
+import sqlite3
 import requests
-from config import get_target_tickers
 from rag_store import query_rag_catalysts
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "llama3.2"
 
-def generate_stock_prediction(ticker: str, timeout_seconds: int = 300) -> dict:
-    """
-    Queries local Ollama instance with RAG catalysts to generate 
-    intraday/swing predictions with an extended timeout.
-    """
-    # Fetch RAG catalysts from ChromaDB
-    catalysts = query_rag_catalysts(ticker, query="earnings momentum sentiment breakout catalyst", top_k=3)
-    catalyst_text = "\n".join([f"- {c['content']}" for c in catalysts]) if catalysts else "No recent breaking catalysts found."
+def save_prediction_to_db(ticker: str, pred: dict):
+    if "error" in pred:
+        return
+    conn = sqlite3.connect("stocks_history.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO predictions (ticker, timestamp, direction, target_price_change_pct, confidence_score, reasoning)
+        VALUES (?, datetime('now'), ?, ?, ?, ?)
+    """, (
+        ticker,
+        pred.get("direction", "NEUTRAL"),
+        pred.get("target_price_change_pct", 0.0),
+        pred.get("confidence_score", 0.0),
+        pred.get("reasoning", "")
+    ))
+    conn.commit()
+    conn.close()
+    print(f"✅ Saved prediction for {ticker} into database.")
+
+def generate_stock_prediction(ticker: str) -> dict:
+    catalysts = query_rag_catalysts(ticker, query="earnings growth momentum", top_k=3)
+    catalyst_text = "\n".join([f"- {c['content']}" for c in catalysts]) if catalysts else "No recent breaking news."
 
     prompt = f"""
-    You are an expert Indian Stock Market Quantitative Analyst.
-    Analyze the following stock ticker and recent news catalysts:
-
-    Ticker: {ticker}
-    Recent Catalysts:
+    Analyze {ticker} with these catalysts:
     {catalyst_text}
 
-    Provide a concise intraday prediction in valid JSON format with keys:
-    "ticker", "direction" ("BULLISH"/"BEARISH"/"NEUTRAL"), "target_price_change_pct", "confidence_score", "reasoning".
-    Return ONLY valid raw JSON.
+    Return JSON only:
+    {{
+        "ticker": "{ticker}",
+        "direction": "BULLISH",
+        "target_price_change_pct": 2.5,
+        "confidence_score": 0.85,
+        "reasoning": "Strong momentum and catalyst support."
+    }}
     """
 
-    payload = {
-        "model": MODEL_NAME,
-        "prompt": prompt,
-        "stream": False,
-        "format": "json"
-    }
+    payload = {"model": MODEL_NAME, "prompt": prompt, "stream": False, "format": "json"}
 
     try:
-        # Set explicitly extended timeout (300 seconds)
-        response = requests.post(OLLAMA_URL, json=payload, timeout=timeout_seconds)
-        response.raise_for_status()
-        
-        result_json = response.json()
-        response_text = result_json.get("response", "{}")
-        return json.loads(response_text)
-    except requests.exceptions.Timeout:
-        print(f"⚠️ Ollama request timed out for {ticker} after {timeout_seconds}s.")
-        return {"error": f"Ollama timeout after {timeout_seconds}s"}
+        res = requests.post(OLLAMA_URL, json=payload, timeout=300)
+        data = json.loads(res.json().get("response", "{}"))
+        save_prediction_to_db(ticker, data)
+        return data
     except Exception as e:
-        print(f"❌ Error generating prediction for {ticker}: {e}")
+        print(f"❌ Prediction error: {e}")
         return {"error": str(e)}
 
 if __name__ == "__main__":
-    print("Running test prediction cycle...")
-    print("Fetching and embedding market catalysts...")
-    
-    # Test on primary sample ticker
-    sample_ticker = "RELIANCE.NS"
-    prediction = generate_stock_prediction(sample_ticker)
-    
-    print("\n--- Ollama Prediction Output ---")
-    print(json.dumps(prediction, indent=2))
+    print("Generating test prediction for RELIANCE.NS...")
+    result = generate_stock_prediction("RELIANCE.NS")
+    print(json.dumps(result, indent=2))
