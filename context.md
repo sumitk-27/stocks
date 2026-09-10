@@ -1,7 +1,10 @@
 # Project Context: AI-Driven Indian Stock Market & Intraday Dashboard
 
 ## 1. Executive Summary
-Building a local-first, AI-powered stock market analysis and prediction platform for Indian equities (NSE/BSE). Styled after Moneycontrol, the platform integrates historical price databases, technical indicator algorithms, live breaking news scraping, a ChromaDB vector RAG store, and a local Ollama LLM to manage user watchlists, render candlestick charts, track portfolios, and generate automated 9:00 AM and 9:00 PM IST top intraday/swing mover predictions.
+Building a local-first, AI-powered stock market analysis and prediction platform for Indian equities. Styled after Moneycontrol, the platform integrates historical price databases, technical indicator algorithms, live breaking news scraping, a ChromaDB vector RAG store, and a local Ollama LLM to manage user watchlists, render candlestick charts, track portfolios, and generate automated 9:00 AM and 9:00 PM IST top intraday/swing mover predictions.
+
+* **Local Development Mode:** Operates on a liquid 10-stock array (`RELIANCE.NS`, `TCS.NS`, `INFY.NS`, etc.) for fast prototyping.
+* **GCP Production Mode:** Tracks the full universe of active equities listed on both the National Stock Exchange (`.NS`) and the Bombay Stock Exchange (`.BO`).
 
 ## 2. Technical Stack
 * **UI & Visualization:** Streamlit, Plotly (Interactive Candlestick & Technical Overlay Charts)
@@ -19,8 +22,9 @@ stocks/
 ├── __pycache__/            # Python bytecode cache
 ├── venv/                   # Active Python Virtual Environment
 ├── chroma_news_db/         # ChromaDB persistent vector database directory
+├── .gitignore              # Git ignore rules for virtual environments, caches, and DBs
 ├── context.md              # Project source of truth & progress tracking
-├── config.py               # Environment configuration switcher (LOCAL vs GCP)
+├── config.py               # Environment switcher (LOCAL 10-stock vs GCP Full NSE/BSE Tracking)
 ├── init_db.py              # SQLite table initialization script
 ├── ingest_history.py       # Batch OHLCV price history downloader (2020–yesterday)
 ├── server.py               # MCP v2 Server exposing Indian equity data tools

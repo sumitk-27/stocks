@@ -2,7 +2,6 @@ import os
 import requests
 import pandas as pd
 
-# Set ENVIRONMENT to 'GCP' when deploying to Cloud Run / Compute Engine
 ENVIRONMENT = os.getenv("ENVIRONMENT", "LOCAL")
 
 # Core 10-stock test array for local rapid prototyping
@@ -14,19 +13,41 @@ LOCAL_TICKERS = [
 def get_target_tickers() -> list[str]:
     """
     Returns local 10-stock list in LOCAL mode, 
-    or dynamically fetches full Nifty 500 / NSE master list in GCP mode.
+    or dynamically fetches full NSE & BSE master lists in GCP mode.
     """
     if ENVIRONMENT == "LOCAL":
         return LOCAL_TICKERS
     
-    # GCP Mode: Fetch full Nifty 500 list directly from NSE source
+    tickers = []
+    
+    # GCP Mode: Fetch full NSE equities master list
     try:
-        url = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
+        url_nse = "https://archives.nseindia.com/content/equities/EQUITY_L.csv"
         headers = {"User-Agent": "Mozilla/5.0"}
-        df = pd.read_csv(url)
-        # Convert NSE symbols (e.g. RELIANCE) to yfinance format (RELIANCE.NS)
-        gcp_tickers = [f"{symbol.strip()}.NS" for symbol in df["Symbol"].dropna()]
-        return gcp_tickers
+        res = requests.get(url_nse, headers=headers, timeout=10)
+        if res.status_code == 200:
+            df_nse = pd.read_csv(pd.io.common.BytesIO(res.content))
+            tickers.extend([f"{symbol.strip()}.NS" for symbol in df_nse["SYMBOL"].dropna()])
     except Exception as e:
-        print(f"Error fetching full market list on GCP, falling back to local: {e}")
-        return LOCAL_TICKERS
+        print(f"Error fetching NSE list, trying Nifty 500 fallback: {e}")
+        try:
+            url_nifty = "https://archives.nseindia.com/content/indices/ind_nifty500list.csv"
+            df_nifty = pd.read_csv(url_nifty)
+            tickers.extend([f"{symbol.strip()}.NS" for symbol in df_nifty["Symbol"].dropna()])
+        except Exception as ex:
+            print(f"Error fetching fallback Nifty list: {ex}")
+
+    # GCP Mode: Fetch BSE equities master list
+    try:
+        url_bse = "https://api.bseindia.com/BseIndiaAPI/api/ListofScrip/w?Group=&Scrip_code=&scrip_name=&segment=Equity&status=Active"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        res = requests.get(url_bse, headers=headers, timeout=10)
+        if res.status_code == 200:
+            bse_data = res.json()
+            tickers.extend([f"{item['SCRIP_CD'].strip()}.BO" for item in bse_data if 'SCRIP_CD' in item])
+    except Exception as e:
+        print(f"Error fetching BSE master list: {e}")
+
+    # Deduplicate and return complete list
+    all_tickers = sorted(list(set(tickers)))
+    return all_tickers if all_tickers else LOCAL_TICKERS
